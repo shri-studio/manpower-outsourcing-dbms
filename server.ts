@@ -1,347 +1,328 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import Database from "better-sqlite3";
+import pg from "pg";
+const { Pool } = pg;
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("manpower.db");
-
-// Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    login_code TEXT NOT NULL UNIQUE,
-    role TEXT NOT NULL DEFAULT 'staff'
-  );
-
-  CREATE TABLE IF NOT EXISTS clients (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    company_name TEXT NOT NULL,
-    location TEXT,
-    sector TEXT,
-    contact_person TEXT,
-    unique_code TEXT UNIQUE,
-    status TEXT DEFAULT 'approved',
-    created_by INTEGER,
-    FOREIGN KEY(created_by) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS client_contacts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    designation TEXT,
-    mobile_no TEXT,
-    email TEXT,
-    FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS employees (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    id_no TEXT,
-    id_expiry_date TEXT,
-    dob TEXT,
-    gender TEXT,
-    personal_details TEXT,
-    salary REAL,
-    client_id INTEGER,
-    employee_id_at_client TEXT,
-    joining_date TEXT,
-    no_of_dependants INTEGER DEFAULT 0,
-    insurance_provider TEXT,
-    insurance_card_no TEXT,
-    insurance_plan TEXT,
-    insurance_expiry TEXT,
-    address TEXT,
-    emergency_contact_name TEXT,
-    emergency_contact_phone TEXT,
-    emergency_contact_relation TEXT,
-    status TEXT DEFAULT 'approved',
-    created_by INTEGER,
-    FOREIGN KEY(client_id) REFERENCES clients(id),
-    FOREIGN KEY(created_by) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS dependants (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    id_no TEXT,
-    id_expiry_date TEXT,
-    dob TEXT,
-    gender TEXT,
-    relationship TEXT,
-    employee_id INTEGER,
-    insurance_provider TEXT,
-    insurance_card_no TEXT,
-    insurance_plan TEXT,
-    insurance_expiry TEXT,
-    created_by INTEGER,
-    FOREIGN KEY(employee_id) REFERENCES employees(id),
-    FOREIGN KEY(created_by) REFERENCES users(id)
-  );
-`);
-
-// Seed Admin if not exists
-const adminExists = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
-if (!adminExists) {
-  db.prepare("INSERT INTO users (name, login_code, role) VALUES (?, ?, ?)").run("Admin", "0608", "admin");
-}
-
-// Migration: Add no_of_dependants to employees if not exists
-try {
-  db.prepare("ALTER TABLE employees ADD COLUMN no_of_dependants INTEGER DEFAULT 0").run();
-} catch (e) {
-  // Column likely already exists
-}
-
-// Migration: Add id_expiry_date to employees if not exists
-try {
-  db.prepare("ALTER TABLE employees ADD COLUMN id_expiry_date TEXT").run();
-} catch (e) {}
-
-// Migration: Add gender to employees if not exists
-try {
-  db.prepare("ALTER TABLE employees ADD COLUMN gender TEXT").run();
-} catch (e) {}
-
-// Migration: Add gender to dependants if not exists
-try {
-  db.prepare("ALTER TABLE dependants ADD COLUMN gender TEXT").run();
-} catch (e) {}
-
-// Migration: Add relationship to dependants if not exists
-try {
-  db.prepare("ALTER TABLE dependants ADD COLUMN relationship TEXT").run();
-} catch (e) {}
-
-// New Migrations for Medical Insurance and Address
-const migrations = [
-  { table: 'employees', column: 'insurance_provider', type: 'TEXT' },
-  { table: 'employees', column: 'insurance_card_no', type: 'TEXT' },
-  { table: 'employees', column: 'insurance_plan', type: 'TEXT' },
-  { table: 'employees', column: 'insurance_expiry', type: 'TEXT' },
-  { table: 'employees', column: 'address', type: 'TEXT' },
-  { table: 'employees', column: 'emergency_contact_name', type: 'TEXT' },
-  { table: 'employees', column: 'emergency_contact_phone', type: 'TEXT' },
-  { table: 'employees', column: 'emergency_contact_relation', type: 'TEXT' },
-  { table: 'employees', column: 'country', type: 'TEXT' },
-  { table: 'employees', column: 'id_start_date', type: 'TEXT' },
-  { table: 'employees', column: 'visa_designation', type: 'TEXT' },
-  { table: 'employees', column: 'basic_salary', type: 'REAL' },
-  { table: 'employees', column: 'accommodation_allowance', type: 'REAL' },
-  { table: 'employees', column: 'travel_allowance', type: 'REAL' },
-  { table: 'employees', column: 'mobile_no', type: 'TEXT' },
-  { table: 'employees', column: 'personal_email', type: 'TEXT' },
-  { table: 'dependants', column: 'id_start_date', type: 'TEXT' },
-  { table: 'dependants', column: 'insurance_provider', type: 'TEXT' },
-  { table: 'dependants', column: 'insurance_card_no', type: 'TEXT' },
-  { table: 'dependants', column: 'insurance_plan', type: 'TEXT' },
-  { table: 'dependants', column: 'insurance_expiry', type: 'TEXT' },
-  { table: 'clients', column: 'cr_no', type: 'TEXT' },
-  { table: 'clients', column: 'contract_type', type: 'TEXT' },
-  { table: 'clients', column: 'contract_renewal_date', type: 'TEXT' },
-  { table: 'clients', column: 'sector_other', type: 'TEXT' },
-  { table: 'employees', column: 'nationality', type: 'TEXT' },
-  { table: 'employees', column: 'passport_no', type: 'TEXT' },
-  { table: 'employees', column: 'passport_issuing_country', type: 'TEXT' },
-  { table: 'employees', column: 'passport_issue_date', type: 'TEXT' },
-  { table: 'employees', column: 'passport_expiry_date', type: 'TEXT' },
-  { table: 'employees', column: 'permanent_address', type: 'TEXT' },
-  { table: 'dependants', column: 'mobile_no', type: 'TEXT' },
-  { table: 'dependants', column: 'personal_email', type: 'TEXT' },
-  { table: 'dependants', column: 'nationality', type: 'TEXT' },
-  { table: 'dependants', column: 'address', type: 'TEXT' },
-  { table: 'dependants', column: 'country', type: 'TEXT' },
-  { table: 'dependants', column: 'passport_no', type: 'TEXT' },
-  { table: 'dependants', column: 'passport_issuing_country', type: 'TEXT' },
-  { table: 'dependants', column: 'passport_issue_date', type: 'TEXT' },
-  { table: 'dependants', column: 'passport_expiry_date', type: 'TEXT' },
-  { table: 'dependants', column: 'permanent_address', type: 'TEXT' },
-  { table: 'dependants', column: 'id_start_date', type: 'TEXT' },
-];
-
-migrations.forEach(m => {
-  try {
-    db.prepare(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.type}`).run();
-  } catch (e) {}
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
 });
 
+// Initialize Database
+async function initDb() {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        login_code TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL DEFAULT 'staff'
+      );
+
+      CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        location TEXT,
+        sector TEXT,
+        sector_other TEXT,
+        unique_code TEXT UNIQUE,
+        cr_no TEXT,
+        contract_type TEXT,
+        contract_renewal_date TEXT,
+        status TEXT DEFAULT 'approved',
+        created_by INTEGER REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS client_contacts (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        designation TEXT,
+        mobile_no TEXT,
+        email TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS employees (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        id_no TEXT,
+        id_start_date TEXT,
+        id_expiry_date TEXT,
+        dob TEXT,
+        gender TEXT,
+        personal_details TEXT,
+        salary DOUBLE PRECISION,
+        basic_salary DOUBLE PRECISION,
+        accommodation_allowance DOUBLE PRECISION,
+        travel_allowance DOUBLE PRECISION,
+        client_id INTEGER REFERENCES clients(id),
+        employee_id_at_client TEXT,
+        joining_date TEXT,
+        no_of_dependants INTEGER DEFAULT 0,
+        insurance_provider TEXT,
+        insurance_card_no TEXT,
+        insurance_plan TEXT,
+        insurance_expiry TEXT,
+        address TEXT,
+        country TEXT,
+        visa_designation TEXT,
+        mobile_no TEXT,
+        personal_email TEXT,
+        nationality TEXT,
+        passport_no TEXT,
+        passport_issuing_country TEXT,
+        passport_issue_date TEXT,
+        passport_expiry_date TEXT,
+        permanent_address TEXT,
+        emergency_contact_name TEXT,
+        emergency_contact_phone TEXT,
+        emergency_contact_relation TEXT,
+        status TEXT DEFAULT 'approved',
+        created_by INTEGER REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS dependants (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        id_no TEXT,
+        id_start_date TEXT,
+        id_expiry_date TEXT,
+        dob TEXT,
+        gender TEXT,
+        relationship TEXT,
+        employee_id INTEGER REFERENCES employees(id),
+        insurance_provider TEXT,
+        insurance_card_no TEXT,
+        insurance_plan TEXT,
+        insurance_expiry TEXT,
+        mobile_no TEXT,
+        personal_email TEXT,
+        nationality TEXT,
+        address TEXT,
+        country TEXT,
+        passport_no TEXT,
+        passport_issuing_country TEXT,
+        passport_issue_date TEXT,
+        passport_expiry_date TEXT,
+        permanent_address TEXT,
+        created_by INTEGER REFERENCES users(id)
+      );
+    `);
+
+    // Seed Admin if not exists
+    const adminRes = await client.query("SELECT * FROM users WHERE role = 'admin'");
+    if (adminRes.rowCount === 0) {
+      await client.query("INSERT INTO users (name, login_code, role) VALUES ($1, $2, $3)", ["Admin", "0608", "admin"]);
+    }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("Database initialization failed:", e);
+  } finally {
+    client.release();
+  }
+}
+
 async function startServer() {
+  await initDb();
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
 
   // API Routes
-  app.post("/api/login", (req, res) => {
+  app.post("/api/login", async (req, res) => {
     const { code } = req.body;
-    const user = db.prepare("SELECT * FROM users WHERE login_code = ?").get(code);
-    if (user) {
-      res.json({ success: true, user });
-    } else {
-      res.status(401).json({ success: false, message: "Invalid login code" });
+    try {
+      const result = await pool.query("SELECT * FROM users WHERE login_code = $1", [code]);
+      const user = result.rows[0];
+      if (user) {
+        res.json({ success: true, user });
+      } else {
+        res.status(401).json({ success: false, message: "Invalid login code" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
     }
   });
 
   // Admin Routes
-  app.get("/api/admin/users", (req, res) => {
-    const users = db.prepare("SELECT * FROM users WHERE role = 'staff'").all();
-    res.json(users);
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const result = await pool.query("SELECT * FROM users WHERE role = 'staff'");
+      res.json(result.rows);
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
+    }
   });
 
-  app.post("/api/admin/users", (req, res) => {
+  app.post("/api/admin/users", async (req, res) => {
     const { name, login_code } = req.body;
     try {
-      const result = db.prepare("INSERT INTO users (name, login_code, role) VALUES (?, ?, 'staff')").run(name, login_code);
-      res.json({ success: true, id: result.lastInsertRowid });
+      const result = await pool.query("INSERT INTO users (name, login_code, role) VALUES ($1, $2, 'staff') RETURNING id", [name, login_code]);
+      res.json({ success: true, id: result.rows[0].id });
     } catch (e: any) {
       res.status(400).json({ success: false, message: e.message });
     }
   });
 
   // Client Routes
-  app.get("/api/clients", (req, res) => {
-    const clients = db.prepare(`
-      SELECT c.*, 
-      (SELECT COUNT(*) FROM employees e WHERE e.client_id = c.id) as employee_count
-      FROM clients c
-    `).all();
-    
-    // Fetch contacts for each client
-    const clientsWithContacts = clients.map((client: any) => {
-      const contacts = db.prepare("SELECT * FROM client_contacts WHERE client_id = ?").all(client.id);
-      return { ...client, contacts };
-    });
-    
-    res.json(clientsWithContacts);
+  app.get("/api/clients", async (req, res) => {
+    try {
+      const clientsResult = await pool.query(`
+        SELECT c.*, 
+        (SELECT COUNT(*) FROM employees e WHERE e.client_id = c.id) as employee_count
+        FROM clients c
+      `);
+      
+      const clients = clientsResult.rows;
+      
+      // Fetch contacts for each client
+      const clientsWithContacts = await Promise.all(clients.map(async (client: any) => {
+        const contactsResult = await pool.query("SELECT * FROM client_contacts WHERE client_id = $1", [client.id]);
+        return { ...client, contacts: contactsResult.rows };
+      }));
+      
+      res.json(clientsWithContacts);
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
+    }
   });
 
-  app.post("/api/clients", (req, res) => {
+  app.post("/api/clients", async (req, res) => {
     const { 
       company_name, location, sector, sector_other, unique_code, 
       cr_no, contract_type, contract_renewal_date, 
       created_by, contacts 
     } = req.body;
     
+    const client = await pool.connect();
     try {
-      const insertClient = db.prepare(`
+      await client.query("BEGIN");
+      
+      const clientResult = await client.query(`
         INSERT INTO clients (
           company_name, location, sector, sector_other, unique_code, 
           cr_no, contract_type, contract_renewal_date, created_by
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id
+      `, [
+        company_name, location, sector, sector_other, unique_code, 
+        cr_no, contract_type, contract_renewal_date, created_by
+      ]);
       
-      const insertContact = db.prepare(`
-        INSERT INTO client_contacts (client_id, name, designation, mobile_no, email)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-
-      const result = db.transaction(() => {
-        const clientResult = insertClient.run(
-          company_name, location, sector, sector_other, unique_code, 
-          cr_no, contract_type, contract_renewal_date, created_by
-        );
-        const clientId = clientResult.lastInsertRowid;
-        
-        if (contacts && Array.isArray(contacts)) {
-          for (const contact of contacts) {
-            insertContact.run(clientId, contact.name, contact.designation, contact.mobile_no, contact.email);
-          }
+      const clientId = clientResult.rows[0].id;
+      
+      if (contacts && Array.isArray(contacts)) {
+        for (const contact of contacts) {
+          await client.query(`
+            INSERT INTO client_contacts (client_id, name, designation, mobile_no, email)
+            VALUES ($1, $2, $3, $4, $5)
+          `, [clientId, contact.name, contact.designation, contact.mobile_no, contact.email]);
         }
-        return clientId;
-      })();
-
-      res.json({ success: true, id: result });
+      }
+      
+      await client.query("COMMIT");
+      res.json({ success: true, id: clientId });
     } catch (e: any) {
+      await client.query("ROLLBACK");
       res.status(400).json({ success: false, message: e.message });
+    } finally {
+      client.release();
     }
   });
 
-  app.put("/api/clients/:id", (req, res) => {
+  app.put("/api/clients/:id", async (req, res) => {
     const { 
       company_name, location, sector, sector_other, unique_code, 
       cr_no, contract_type, contract_renewal_date, contacts 
     } = req.body;
     const clientId = req.params.id;
 
+    const client = await pool.connect();
     try {
-      const updateClient = db.prepare(`
-        UPDATE clients SET 
-          company_name = ?, location = ?, sector = ?, sector_other = ?, 
-          unique_code = ?, cr_no = ?, contract_type = ?, contract_renewal_date = ?
-        WHERE id = ?
-      `);
+      await client.query("BEGIN");
       
-      const deleteContacts = db.prepare("DELETE FROM client_contacts WHERE client_id = ?");
-      const insertContact = db.prepare(`
-        INSERT INTO client_contacts (client_id, name, designation, mobile_no, email)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-
-      db.transaction(() => {
-        updateClient.run(
-          company_name, location, sector, sector_other, unique_code, 
-          cr_no, contract_type, contract_renewal_date, clientId
-        );
-        
-        deleteContacts.run(clientId);
-        
-        if (contacts && Array.isArray(contacts)) {
-          for (const contact of contacts) {
-            insertContact.run(clientId, contact.name, contact.designation, contact.mobile_no, contact.email);
-          }
+      await client.query(`
+        UPDATE clients SET 
+          company_name = $1, location = $2, sector = $3, sector_other = $4, 
+          unique_code = $5, cr_no = $6, contract_type = $7, contract_renewal_date = $8
+        WHERE id = $9
+      `, [
+        company_name, location, sector, sector_other, unique_code, 
+        cr_no, contract_type, contract_renewal_date, clientId
+      ]);
+      
+      await client.query("DELETE FROM client_contacts WHERE client_id = $1", [clientId]);
+      
+      if (contacts && Array.isArray(contacts)) {
+        for (const contact of contacts) {
+          await client.query(`
+            INSERT INTO client_contacts (client_id, name, designation, mobile_no, email)
+            VALUES ($1, $2, $3, $4, $5)
+          `, [clientId, contact.name, contact.designation, contact.mobile_no, contact.email]);
         }
-      })();
-
+      }
+      
+      await client.query("COMMIT");
       res.json({ success: true });
     } catch (e: any) {
+      await client.query("ROLLBACK");
       res.status(400).json({ success: false, message: e.message });
+    } finally {
+      client.release();
     }
   });
 
-  app.post("/api/clients/bulk", (req, res) => {
+  app.post("/api/clients/bulk", async (req, res) => {
     const { clients, created_by } = req.body;
-    const insert = db.prepare(`
-      INSERT INTO clients (
-        company_name, location, sector, sector_other, unique_code, 
-        cr_no, contract_type, contract_renewal_date, created_by
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    const insertMany = db.transaction((data) => {
-      for (const item of data) {
-        insert.run(
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const item of clients) {
+        await client.query(`
+          INSERT INTO clients (
+            company_name, location, sector, sector_other, unique_code, 
+            cr_no, contract_type, contract_renewal_date, created_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [
           item.company_name, item.location, item.sector, item.sector_other || '', 
           item.unique_code, item.cr_no, item.contract_type, item.contract_renewal_date, created_by
-        );
+        ]);
       }
-    });
-
-    try {
-      insertMany(clients);
+      await client.query("COMMIT");
       res.json({ success: true });
     } catch (e: any) {
+      await client.query("ROLLBACK");
       res.status(400).json({ success: false, message: e.message });
+    } finally {
+      client.release();
     }
   });
-  app.get("/api/employees", (req, res) => {
-    const employees = db.prepare(`
-      SELECT e.*, c.company_name as client_name, 
-      (SELECT COUNT(*) FROM dependants d WHERE d.employee_id = e.id) as no_of_dependants
-      FROM employees e 
-      LEFT JOIN clients c ON e.client_id = c.id
-    `).all();
-    res.json(employees);
+
+  app.get("/api/employees", async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT e.*, c.company_name as client_name, 
+        (SELECT COUNT(*) FROM dependants d WHERE d.employee_id = e.id) as no_of_dependants
+        FROM employees e 
+        LEFT JOIN clients c ON e.client_id = c.id
+      `);
+      res.json(result.rows);
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
+    }
   });
 
-  app.post("/api/employees", (req, res) => {
+  app.post("/api/employees", async (req, res) => {
     const { 
       name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
       basic_salary, accommodation_allowance, travel_allowance,
@@ -352,7 +333,7 @@ async function startServer() {
       emergency_contact_name, emergency_contact_phone, emergency_contact_relation
     } = req.body;
     try {
-      const result = db.prepare(`
+      const result = await pool.query(`
         INSERT INTO employees (
           name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
           basic_salary, accommodation_allowance, travel_allowance,
@@ -362,8 +343,9 @@ async function startServer() {
           nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
           emergency_contact_name, emergency_contact_phone, emergency_contact_relation
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+        RETURNING id
+      `, [
         name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
         basic_salary, accommodation_allowance, travel_allowance,
         client_id, employee_id_at_client, joining_date, created_by,
@@ -371,14 +353,14 @@ async function startServer() {
         address, country, visa_designation, mobile_no, personal_email,
         nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
         emergency_contact_name, emergency_contact_phone, emergency_contact_relation
-      );
-      res.json({ success: true, id: result.lastInsertRowid });
+      ]);
+      res.json({ success: true, id: result.rows[0].id });
     } catch (e: any) {
       res.status(400).json({ success: false, message: e.message });
     }
   });
 
-  app.put("/api/employees/:id", (req, res) => {
+  app.put("/api/employees/:id", async (req, res) => {
     const { 
       name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
       basic_salary, accommodation_allowance, travel_allowance,
@@ -389,19 +371,19 @@ async function startServer() {
       emergency_contact_name, emergency_contact_phone, emergency_contact_relation
     } = req.body;
     try {
-      db.prepare(`
+      await pool.query(`
         UPDATE employees SET 
-          name = ?, id_no = ?, id_expiry_date = ?, id_start_date = ?, dob = ?, gender = ?, 
-          personal_details = ?, salary = ?, 
-          basic_salary = ?, accommodation_allowance = ?, travel_allowance = ?,
-          client_id = ?, 
-          employee_id_at_client = ?, joining_date = ?,
-          insurance_provider = ?, insurance_card_no = ?, insurance_plan = ?, insurance_expiry = ?,
-          address = ?, country = ?, visa_designation = ?, mobile_no = ?, personal_email = ?,
-          nationality = ?, passport_no = ?, passport_issuing_country = ?, passport_issue_date = ?, passport_expiry_date = ?, permanent_address = ?,
-          emergency_contact_name = ?, emergency_contact_phone = ?, emergency_contact_relation = ?
-        WHERE id = ?
-      `).run(
+          name = $1, id_no = $2, id_expiry_date = $3, id_start_date = $4, dob = $5, gender = $6, 
+          personal_details = $7, salary = $8, 
+          basic_salary = $9, accommodation_allowance = $10, travel_allowance = $11,
+          client_id = $12, 
+          employee_id_at_client = $13, joining_date = $14,
+          insurance_provider = $15, insurance_card_no = $16, insurance_plan = $17, insurance_expiry = $18,
+          address = $19, country = $20, visa_designation = $21, mobile_no = $22, personal_email = $23,
+          nationality = $24, passport_no = $25, passport_issuing_country = $26, passport_issue_date = $27, passport_expiry_date = $28, permanent_address = $29,
+          emergency_contact_name = $30, emergency_contact_phone = $31, emergency_contact_relation = $32
+        WHERE id = $33
+      `, [
         name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
         basic_salary, accommodation_allowance, travel_allowance,
         client_id, employee_id_at_client, joining_date,
@@ -410,65 +392,74 @@ async function startServer() {
         nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
         emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
         req.params.id
-      );
+      ]);
       res.json({ success: true });
     } catch (e: any) {
       res.status(400).json({ success: false, message: e.message });
     }
   });
 
-  app.post("/api/employees/bulk", (req, res) => {
+  app.post("/api/employees/bulk", async (req, res) => {
     const { employees, created_by } = req.body;
-    const insert = db.prepare(`
-      INSERT INTO employees (
-        name, id_no, id_expiry_date, dob, gender, personal_details, salary, 
-        client_id, employee_id_at_client, joining_date, created_by
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    const insertMany = db.transaction((data) => {
-      for (const item of data) {
-        insert.run(
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const item of employees) {
+        await client.query(`
+          INSERT INTO employees (
+            name, id_no, id_expiry_date, dob, gender, personal_details, salary, 
+            client_id, employee_id_at_client, joining_date, created_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `, [
           item.name, item.id_no, item.id_expiry_date, item.dob, item.gender, item.personal_details, item.salary, 
           item.client_id, item.employee_id_at_client, item.joining_date, created_by
-        );
+        ]);
       }
-    });
-
-    try {
-      insertMany(employees);
+      await client.query("COMMIT");
       res.json({ success: true });
     } catch (e: any) {
+      await client.query("ROLLBACK");
       res.status(400).json({ success: false, message: e.message });
+    } finally {
+      client.release();
     }
   });
 
-  app.get("/api/employees/:id", (req, res) => {
-    const employee = db.prepare(`
-      SELECT e.*, c.company_name as client_name 
-      FROM employees e 
-      LEFT JOIN clients c ON e.client_id = c.id
-      WHERE e.id = ?
-    `).get(req.params.id);
-    if (employee) {
-      res.json(employee);
-    } else {
-      res.status(404).json({ message: "Employee not found" });
+  app.get("/api/employees/:id", async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT e.*, c.company_name as client_name 
+        FROM employees e 
+        LEFT JOIN clients c ON e.client_id = c.id
+        WHERE e.id = $1
+      `, [req.params.id]);
+      const employee = result.rows[0];
+      if (employee) {
+        res.json(employee);
+      } else {
+        res.status(404).json({ message: "Employee not found" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
     }
   });
 
   // Dependant Routes
-  app.get("/api/dependants", (req, res) => {
-    const dependants = db.prepare(`
-      SELECT d.*, e.name as employee_name 
-      FROM dependants d 
-      LEFT JOIN employees e ON d.employee_id = e.id
-    `).all();
-    res.json(dependants);
+  app.get("/api/dependants", async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT d.*, e.name as employee_name 
+        FROM dependants d 
+        LEFT JOIN employees e ON d.employee_id = e.id
+      `);
+      res.json(result.rows);
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
+    }
   });
 
-  app.post("/api/dependants", (req, res) => {
+  app.post("/api/dependants", async (req, res) => {
     const { 
       name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by,
       insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
@@ -476,27 +467,28 @@ async function startServer() {
       passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
     } = req.body;
     try {
-      const result = db.prepare(`
+      const result = await pool.query(`
         INSERT INTO dependants (
           name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by,
           insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
           mobile_no, personal_email, nationality, address, country,
           passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        RETURNING id
+      `, [
         name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by,
         insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
         mobile_no, personal_email, nationality, address, country,
         passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
-      );
-      res.json({ success: true, id: result.lastInsertRowid });
+      ]);
+      res.json({ success: true, id: result.rows[0].id });
     } catch (e: any) {
       res.status(400).json({ success: false, message: e.message });
     }
   });
 
-  app.put("/api/dependants/:id", (req, res) => {
+  app.put("/api/dependants/:id", async (req, res) => {
     const { 
       name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id,
       insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
@@ -504,49 +496,49 @@ async function startServer() {
       passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
     } = req.body;
     try {
-      db.prepare(`
+      await pool.query(`
         UPDATE dependants SET 
-          name = ?, id_no = ?, id_expiry_date = ?, id_start_date = ?, dob = ?, 
-          gender = ?, relationship = ?, employee_id = ?,
-          insurance_provider = ?, insurance_card_no = ?, insurance_plan = ?, insurance_expiry = ?,
-          mobile_no = ?, personal_email = ?, nationality = ?, address = ?, country = ?,
-          passport_no = ?, passport_issuing_country = ?, passport_issue_date = ?, passport_expiry_date = ?, permanent_address = ?
-        WHERE id = ?
-      `).run(
+          name = $1, id_no = $2, id_expiry_date = $3, id_start_date = $4, dob = $5, 
+          gender = $6, relationship = $7, employee_id = $8,
+          insurance_provider = $9, insurance_card_no = $10, insurance_plan = $11, insurance_expiry = $12,
+          mobile_no = $13, personal_email = $14, nationality = $15, address = $16, country = $17,
+          passport_no = $18, passport_issuing_country = $19, passport_issue_date = $20, passport_expiry_date = $21, permanent_address = $22
+        WHERE id = $23
+      `, [
         name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, 
         insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
         mobile_no, personal_email, nationality, address, country,
         passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
         req.params.id
-      );
+      ]);
       res.json({ success: true });
     } catch (e: any) {
       res.status(400).json({ success: false, message: e.message });
     }
   });
 
-  app.post("/api/dependants/bulk", (req, res) => {
+  app.post("/api/dependants/bulk", async (req, res) => {
     const { dependants, created_by } = req.body;
-    const insert = db.prepare(`
-      INSERT INTO dependants (
-        name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    const insertMany = db.transaction((data) => {
-      for (const item of data) {
-        insert.run(
-          item.name, item.id_no, item.id_expiry_date, item.id_start_date, item.dob, item.gender, item.relationship, item.employee_id, created_by
-        );
-      }
-    });
-
+    const client = await pool.connect();
     try {
-      insertMany(dependants);
+      await client.query("BEGIN");
+      for (const item of dependants) {
+        await client.query(`
+          INSERT INTO dependants (
+            name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `, [
+          item.name, item.id_no, item.id_expiry_date, item.id_start_date, item.dob, item.gender, item.relationship, item.employee_id, created_by
+        ]);
+      }
+      await client.query("COMMIT");
       res.json({ success: true });
     } catch (e: any) {
+      await client.query("ROLLBACK");
       res.status(400).json({ success: false, message: e.message });
+    } finally {
+      client.release();
     }
   });
 
