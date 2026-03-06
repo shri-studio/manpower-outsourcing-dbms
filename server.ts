@@ -4,6 +4,9 @@ import pg from "pg";
 const { Pool } = pg;
 import path from "path";
 import { fileURLToPath } from "url";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { Resend } from "resend";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,9 +15,78 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Initialize Database
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: number;
+        email: string;
+        role: 'superadmin' | 'admin' | 'staff';
+        company_id?: number;
+      };
+    }
+  }
+}
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Middleware
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token == null) return res.sendStatus(401);
+
+  jwt.verify(token, process.env.JWT_SECRET as string, (err: any, decoded: any) => {
+    if (err) return res.sendStatus(403);
+    req.user = decoded;
+    next();
+  });
+};
+
+const isSuperAdmin = (req: any, res: any, next: any) => {
+  if (req.user.role !== 'superadmin') return res.status(403).json({ message: "Access denied" });
+  next();
+};
+
+const isAdmin = (req: any, res: any, next: any) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'superadmin') return res.status(403).json({ message: "Access denied" });
+  next();
+};
+
+async function setupDb() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS companies (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT UNIQUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_first_login BOOLEAN DEFAULT TRUE;
+      
+      -- Update existing users if needed (optional, depends on state)
+    `);
+    
+    const superadminCheck = await client.query("SELECT * FROM users WHERE role = 'superadmin'");
+    if (superadminCheck.rowCount === 0) {
+      await client.query("INSERT INTO users (name, email, role, is_first_login) VALUES ($1, $2, $3, $4)", 
+        ["Super Admin", "superadmin@example.com", "superadmin", true]);
+    }
+  } catch (e) {
+    console.error("DB Setup Error:", e);
+  } finally {
+    client.release();
+  }
+}
 
 async function startServer() {
+  await setupDb();
   const app = express();
   const PORT = 3000;
 
@@ -22,34 +94,185 @@ async function startServer() {
 
   // API Routes
   app.post("/api/login", async (req, res) => {
-    const { code } = req.body;
+    const { email, password, isMaster } = req.body;
     try {
-      const result = await pool.query("SELECT * FROM users WHERE login_code = $1", [code]);
+      const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
       const user = result.rows[0];
-      if (user) {
-        res.json({ success: true, user });
+      
+      if (!user) {
+        return res.status(401).json({ success: false, message: "Invalid credentials" });
+      }
+
+      // Superadmin protection
+      if (user.role === 'superadmin' && !isMaster) {
+        return res.status(403).json({ success: false, message: "Access denied" });
+      }
+
+      // First login superadmin case
+      if (user.role === 'superadmin' && user.password_hash === null) {
+        const token = jwt.sign(
+          { id: user.id, email: user.email, role: user.role, company_id: user.company_id },
+          process.env.JWT_SECRET as string,
+          { expiresIn: '24h' }
+        );
+        return res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role, is_first_login: true } });
+      }
+
+      // Regular login
+      if (!user.password_hash) {
+        return res.status(401).json({ success: false, message: "Account not set up. Please use first login link." });
+      }
+
+      const match = await bcrypt.compare(password, user.password_hash);
+      if (match) {
+        const token = jwt.sign(
+          { id: user.id, email: user.email, role: user.role, company_id: user.company_id },
+          process.env.JWT_SECRET as string,
+          { expiresIn: '24h' }
+        );
+        res.json({ 
+          success: true, 
+          token, 
+          user: { id: user.id, name: user.name, email: user.email, role: user.role, is_first_login: user.is_first_login, company_id: user.company_id } 
+        });
       } else {
-        res.status(401).json({ success: false, message: "Invalid login code" });
+        res.status(401).json({ success: false, message: "Invalid credentials" });
       }
     } catch (e: any) {
       res.status(500).json({ success: false, message: e.message });
     }
   });
 
-  // Admin Routes
-  app.get("/api/admin/users", async (req, res) => {
+  app.post("/api/set-password", async (req, res) => {
+    const { email, password } = req.body;
     try {
-      const result = await pool.query("SELECT * FROM users WHERE role = 'staff'");
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const result = await pool.query(
+        "UPDATE users SET password_hash = $1, is_first_login = false WHERE email = $2 RETURNING *",
+        [hashedPassword, email]
+      );
+      const user = result.rows[0];
+      if (user) {
+        const token = jwt.sign(
+          { id: user.id, email: user.email, role: user.role, company_id: user.company_id },
+          process.env.JWT_SECRET as string,
+          { expiresIn: '24h' }
+        );
+        res.json({ success: true, token, user: { id: user.id, name: user.name, email: user.email, role: user.role, is_first_login: false, company_id: user.company_id } });
+      } else {
+        res.status(404).json({ success: false, message: "User not found" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
+    }
+  });
+
+  // Superadmin Routes
+  app.get("/api/superadmin/companies", authenticateToken, isSuperAdmin, async (req, res) => {
+    try {
+      const result = await pool.query("SELECT * FROM companies ORDER BY name ASC");
       res.json(result.rows);
     } catch (e: any) {
       res.status(500).json({ success: false, message: e.message });
     }
   });
 
-  app.post("/api/admin/users", async (req, res) => {
-    const { name, login_code } = req.body;
+  app.post("/api/superadmin/companies", authenticateToken, isSuperAdmin, async (req, res) => {
+    const { company_name, email } = req.body;
     try {
-      const result = await pool.query("INSERT INTO users (name, login_code, role) VALUES ($1, $2, 'staff') RETURNING id", [name, login_code]);
+      const result = await pool.query("INSERT INTO companies (name, email) VALUES ($1, $2) RETURNING id", [company_name, email]);
+      res.json({ success: true, id: result.rows[0].id });
+    } catch (e: any) {
+      res.status(400).json({ success: false, message: e.message });
+    }
+  });
+
+  app.post("/api/superadmin/admins", authenticateToken, isSuperAdmin, async (req, res) => {
+    const { name, email, company_id } = req.body;
+    const tempPassword = Math.random().toString(36).slice(-8);
+    try {
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+      const result = await pool.query(
+        "INSERT INTO users (name, email, password_hash, role, company_id, is_first_login) VALUES ($1, $2, $3, 'admin', $4, true) RETURNING id",
+        [name, email, hashedPassword, company_id]
+      );
+      
+      // Send email
+      await resend.emails.send({
+        from: 'Manpower DBMS <onboarding@resend.dev>',
+        to: email,
+        subject: 'Welcome to Manpower DBMS',
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; color: #333;">
+            <h2>Welcome to Manpower Outsource DBMS</h2>
+            <p>Hello ${name},</p>
+            <p>Your admin account has been created. Here are your temporary login credentials:</p>
+            <div style="background: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+            </div>
+            <p>Please login and change your password immediately.</p>
+            <p>Best regards,<br>Manpower DBMS Team</p>
+          </div>
+        `
+      });
+
+      res.json({ success: true, id: result.rows[0].id });
+    } catch (e: any) {
+      res.status(400).json({ success: false, message: e.message });
+    }
+  });
+
+  // Admin Routes
+  app.get("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
+    try {
+      let query = "SELECT id, name, email, role, is_first_login FROM users WHERE role = 'staff'";
+      let params = [];
+      
+      if (req.user.role !== 'superadmin') {
+        query += " AND company_id = $1";
+        params.push(req.user.company_id);
+      }
+      
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
+    }
+  });
+
+  app.post("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
+    const { name, email } = req.body;
+    const tempPassword = Math.random().toString(36).slice(-8);
+    const company_id = req.user.role === 'superadmin' ? req.body.company_id : req.user.company_id;
+
+    try {
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+      const result = await pool.query(
+        "INSERT INTO users (name, email, password_hash, role, company_id, is_first_login) VALUES ($1, $2, $3, 'staff', $4, true) RETURNING id",
+        [name, email, hashedPassword, company_id]
+      );
+
+      // Send email
+      await resend.emails.send({
+        from: 'Manpower DBMS <onboarding@resend.dev>',
+        to: email,
+        subject: 'Your Manpower DBMS Account',
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; color: #333;">
+            <h2>Welcome to Manpower Outsource DBMS</h2>
+            <p>Hello ${name},</p>
+            <p>Your staff account has been created. Here are your temporary login credentials:</p>
+            <div style="background: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Temporary Password:</strong> ${tempPassword}</p>
+            </div>
+            <p>Please login and change your password immediately.</p>
+            <p>Best regards,<br>Manpower DBMS Team</p>
+          </div>
+        `
+      });
+
       res.json({ success: true, id: result.rows[0].id });
     } catch (e: any) {
       res.status(400).json({ success: false, message: e.message });
@@ -57,17 +280,23 @@ async function startServer() {
   });
 
   // Client Routes
-  app.get("/api/clients", async (req, res) => {
+  app.get("/api/clients", authenticateToken, async (req, res) => {
     try {
-      const clientsResult = await pool.query(`
+      let query = `
         SELECT c.*, 
         (SELECT COUNT(*) FROM employees e WHERE e.client_id = c.id) as employee_count
         FROM clients c
-      `);
-      
+      `;
+      let params = [];
+
+      if (req.user.role !== 'superadmin') {
+        query += " WHERE c.company_id = $1";
+        params.push(req.user.company_id);
+      }
+
+      const clientsResult = await pool.query(query, params);
       const clients = clientsResult.rows;
       
-      // Fetch contacts for each client
       const clientsWithContacts = await Promise.all(clients.map(async (client: any) => {
         const contactsResult = await pool.query("SELECT * FROM client_contacts WHERE client_id = $1", [client.id]);
         return { ...client, contacts: contactsResult.rows };
@@ -79,12 +308,13 @@ async function startServer() {
     }
   });
 
-  app.post("/api/clients", async (req, res) => {
+  app.post("/api/clients", authenticateToken, async (req, res) => {
     const { 
       company_name, location, sector, sector_other, unique_code, 
-      cr_no, contract_type, contract_renewal_date, 
-      created_by, contacts 
+      cr_no, contract_type, contract_renewal_date, contacts 
     } = req.body;
+    const company_id = req.user.company_id;
+    const created_by = req.user.id;
     
     const client = await pool.connect();
     try {
@@ -93,13 +323,13 @@ async function startServer() {
       const clientResult = await client.query(`
         INSERT INTO clients (
           company_name, location, sector, sector_other, unique_code, 
-          cr_no, contract_type, contract_renewal_date, created_by
+          cr_no, contract_type, contract_renewal_date, created_by, company_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id
       `, [
         company_name, location, sector, sector_other, unique_code, 
-        cr_no, contract_type, contract_renewal_date, created_by
+        cr_no, contract_type, contract_renewal_date, created_by, company_id
       ]);
       
       const clientId = clientResult.rows[0].id;
@@ -123,7 +353,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/clients/:id", async (req, res) => {
+  app.put("/api/clients/:id", authenticateToken, async (req, res) => {
     const { 
       company_name, location, sector, sector_other, unique_code, 
       cr_no, contract_type, contract_renewal_date, contacts 
@@ -134,6 +364,14 @@ async function startServer() {
     try {
       await client.query("BEGIN");
       
+      // Verify ownership
+      if (req.user.role !== 'superadmin') {
+        const check = await client.query("SELECT company_id FROM clients WHERE id = $1", [clientId]);
+        if (check.rows[0]?.company_id !== req.user.company_id) {
+          throw new Error("Access denied");
+        }
+      }
+
       await client.query(`
         UPDATE clients SET 
           company_name = $1, location = $2, sector = $3, sector_other = $4, 
@@ -165,8 +403,11 @@ async function startServer() {
     }
   });
 
-  app.post("/api/clients/bulk", async (req, res) => {
-    const { clients, created_by } = req.body;
+  app.post("/api/clients/bulk", authenticateToken, async (req, res) => {
+    const { clients } = req.body;
+    const company_id = req.user.company_id;
+    const created_by = req.user.id;
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -174,12 +415,12 @@ async function startServer() {
         await client.query(`
           INSERT INTO clients (
             company_name, location, sector, sector_other, unique_code, 
-            cr_no, contract_type, contract_renewal_date, created_by
+            cr_no, contract_type, contract_renewal_date, created_by, company_id
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `, [
           item.company_name, item.location, item.sector, item.sector_other || '', 
-          item.unique_code, item.cr_no, item.contract_type, item.contract_renewal_date, created_by
+          item.unique_code, item.cr_no, item.contract_type, item.contract_renewal_date, created_by, company_id
         ]);
       }
       await client.query("COMMIT");
@@ -192,47 +433,58 @@ async function startServer() {
     }
   });
 
-  app.get("/api/employees", async (req, res) => {
+  app.get("/api/employees", authenticateToken, async (req, res) => {
     try {
-      const result = await pool.query(`
+      let query = `
         SELECT e.*, c.company_name as client_name, 
         (SELECT COUNT(*) FROM dependants d WHERE d.employee_id = e.id) as no_of_dependants
         FROM employees e 
         LEFT JOIN clients c ON e.client_id = c.id
-      `);
+      `;
+      let params = [];
+
+      if (req.user.role !== 'superadmin') {
+        query += " WHERE e.company_id = $1";
+        params.push(req.user.company_id);
+      }
+
+      const result = await pool.query(query, params);
       res.json(result.rows);
     } catch (e: any) {
       res.status(500).json({ success: false, message: e.message });
     }
   });
 
-  app.post("/api/employees", async (req, res) => {
+  app.post("/api/employees", authenticateToken, async (req, res) => {
     const { 
       name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
       basic_salary, accommodation_allowance, travel_allowance,
-      client_id, employee_id_at_client, joining_date, created_by,
+      client_id, employee_id_at_client, joining_date,
       insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
       address, country, visa_designation, mobile_no, personal_email,
       nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
       emergency_contact_name, emergency_contact_phone, emergency_contact_relation
     } = req.body;
+    const company_id = req.user.company_id;
+    const created_by = req.user.id;
+
     try {
       const result = await pool.query(`
         INSERT INTO employees (
           name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
           basic_salary, accommodation_allowance, travel_allowance,
-          client_id, employee_id_at_client, joining_date, created_by,
+          client_id, employee_id_at_client, joining_date, created_by, company_id,
           insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
           address, country, visa_designation, mobile_no, personal_email,
           nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
           emergency_contact_name, emergency_contact_phone, emergency_contact_relation
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
         RETURNING id
       `, [
         name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
         basic_salary, accommodation_allowance, travel_allowance,
-        client_id, employee_id_at_client, joining_date, created_by,
+        client_id, employee_id_at_client, joining_date, created_by, company_id,
         insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
         address, country, visa_designation, mobile_no, personal_email,
         nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
@@ -244,7 +496,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/employees/:id", async (req, res) => {
+  app.put("/api/employees/:id", authenticateToken, async (req, res) => {
     const { 
       name, id_no, id_expiry_date, id_start_date, dob, gender, personal_details, salary, 
       basic_salary, accommodation_allowance, travel_allowance,
@@ -254,7 +506,17 @@ async function startServer() {
       nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
       emergency_contact_name, emergency_contact_phone, emergency_contact_relation
     } = req.body;
+    const employeeId = req.params.id;
+
     try {
+      // Verify ownership
+      if (req.user.role !== 'superadmin') {
+        const check = await pool.query("SELECT company_id FROM employees WHERE id = $1", [employeeId]);
+        if (check.rows[0]?.company_id !== req.user.company_id) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
       await pool.query(`
         UPDATE employees SET 
           name = $1, id_no = $2, id_expiry_date = $3, id_start_date = $4, dob = $5, gender = $6, 
@@ -275,7 +537,7 @@ async function startServer() {
         address, country, visa_designation, mobile_no, personal_email,
         nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
         emergency_contact_name, emergency_contact_phone, emergency_contact_relation,
-        req.params.id
+        employeeId
       ]);
       res.json({ success: true });
     } catch (e: any) {
@@ -283,8 +545,11 @@ async function startServer() {
     }
   });
 
-  app.post("/api/employees/bulk", async (req, res) => {
-    const { employees, created_by } = req.body;
+  app.post("/api/employees/bulk", authenticateToken, async (req, res) => {
+    const { employees } = req.body;
+    const company_id = req.user.company_id;
+    const created_by = req.user.id;
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -292,12 +557,12 @@ async function startServer() {
         await client.query(`
           INSERT INTO employees (
             name, id_no, id_expiry_date, dob, gender, personal_details, salary, 
-            client_id, employee_id_at_client, joining_date, created_by
+            client_id, employee_id_at_client, joining_date, created_by, company_id
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         `, [
           item.name, item.id_no, item.id_expiry_date, item.dob, item.gender, item.personal_details, item.salary, 
-          item.client_id, item.employee_id_at_client, item.joining_date, created_by
+          item.client_id, item.employee_id_at_client, item.joining_date, created_by, company_id
         ]);
       }
       await client.query("COMMIT");
@@ -310,14 +575,22 @@ async function startServer() {
     }
   });
 
-  app.get("/api/employees/:id", async (req, res) => {
+  app.get("/api/employees/:id", authenticateToken, async (req, res) => {
     try {
-      const result = await pool.query(`
+      let query = `
         SELECT e.*, c.company_name as client_name 
         FROM employees e 
         LEFT JOIN clients c ON e.client_id = c.id
         WHERE e.id = $1
-      `, [req.params.id]);
+      `;
+      let params: any[] = [req.params.id];
+
+      if (req.user.role !== 'superadmin') {
+        query += " AND e.company_id = $2";
+        params.push(req.user.company_id);
+      }
+
+      const result = await pool.query(query, params);
       const employee = result.rows[0];
       if (employee) {
         res.json(employee);
@@ -330,38 +603,49 @@ async function startServer() {
   });
 
   // Dependant Routes
-  app.get("/api/dependants", async (req, res) => {
+  app.get("/api/dependants", authenticateToken, async (req, res) => {
     try {
-      const result = await pool.query(`
+      let query = `
         SELECT d.*, e.name as employee_name 
         FROM dependants d 
         LEFT JOIN employees e ON d.employee_id = e.id
-      `);
+      `;
+      let params = [];
+
+      if (req.user.role !== 'superadmin') {
+        query += " WHERE d.company_id = $1";
+        params.push(req.user.company_id);
+      }
+
+      const result = await pool.query(query, params);
       res.json(result.rows);
     } catch (e: any) {
       res.status(500).json({ success: false, message: e.message });
     }
   });
 
-  app.post("/api/dependants", async (req, res) => {
+  app.post("/api/dependants", authenticateToken, async (req, res) => {
     const { 
-      name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by,
+      name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id,
       insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
       mobile_no, personal_email, nationality, address, country,
       passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
     } = req.body;
+    const company_id = req.user.company_id;
+    const created_by = req.user.id;
+
     try {
       const result = await pool.query(`
         INSERT INTO dependants (
-          name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by,
+          name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by, company_id,
           insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
           mobile_no, personal_email, nationality, address, country,
           passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
         RETURNING id
       `, [
-        name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by,
+        name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by, company_id,
         insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
         mobile_no, personal_email, nationality, address, country,
         passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
@@ -372,14 +656,24 @@ async function startServer() {
     }
   });
 
-  app.put("/api/dependants/:id", async (req, res) => {
+  app.put("/api/dependants/:id", authenticateToken, async (req, res) => {
     const { 
       name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id,
       insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
       mobile_no, personal_email, nationality, address, country,
       passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
     } = req.body;
+    const dependantId = req.params.id;
+
     try {
+      // Verify ownership
+      if (req.user.role !== 'superadmin') {
+        const check = await pool.query("SELECT company_id FROM dependants WHERE id = $1", [dependantId]);
+        if (check.rows[0]?.company_id !== req.user.company_id) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
       await pool.query(`
         UPDATE dependants SET 
           name = $1, id_no = $2, id_expiry_date = $3, id_start_date = $4, dob = $5, 
@@ -393,7 +687,7 @@ async function startServer() {
         insurance_provider, insurance_card_no, insurance_plan, insurance_expiry,
         mobile_no, personal_email, nationality, address, country,
         passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
-        req.params.id
+        dependantId
       ]);
       res.json({ success: true });
     } catch (e: any) {
@@ -401,19 +695,22 @@ async function startServer() {
     }
   });
 
-  app.post("/api/dependants/bulk", async (req, res) => {
-    const { dependants, created_by } = req.body;
+  app.post("/api/dependants/bulk", authenticateToken, async (req, res) => {
+    const { dependants } = req.body;
+    const company_id = req.user.company_id;
+    const created_by = req.user.id;
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       for (const item of dependants) {
         await client.query(`
           INSERT INTO dependants (
-            name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by
+            name, id_no, id_expiry_date, id_start_date, dob, gender, relationship, employee_id, created_by, company_id
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `, [
-          item.name, item.id_no, item.id_expiry_date, item.id_start_date, item.dob, item.gender, item.relationship, item.employee_id, created_by
+          item.name, item.id_no, item.id_expiry_date, item.id_start_date, item.dob, item.gender, item.relationship, item.employee_id, created_by, company_id
         ]);
       }
       await client.query("COMMIT");

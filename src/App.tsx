@@ -24,11 +24,61 @@ import {
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { User, Client, Employee, Dependant } from './types';
+import { User, Client, Employee, Dependant, Company } from './types';
 
 // Components
-const Login = ({ onLogin }: { onLogin: (user: User) => void }) => {
-  const [code, setCode] = useState('');
+const LandingPage = ({ onGoToLogin }: { onGoToLogin: () => void }) => {
+  return (
+    <div className="min-h-screen bg-white flex flex-col">
+      <nav className="px-6 py-4 flex justify-between items-center border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <ShieldCheck className="text-white w-5 h-5" />
+          </div>
+          <span className="font-bold text-xl tracking-tight text-gray-900">Manpower DBMS</span>
+        </div>
+        <button 
+          onClick={onGoToLogin}
+          className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+        >
+          Login
+        </button>
+      </nav>
+
+      <main className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-3xl"
+        >
+          <h1 className="text-5xl md:text-7xl font-extrabold text-gray-900 mb-6 tracking-tight">
+            Manpower Outsource <span className="text-blue-600">DBMS</span>
+          </h1>
+          <p className="text-xl text-gray-500 mb-10 max-w-2xl mx-auto">
+            Streamline your workforce management with our professional database system. 
+            Secure, efficient, and built for scale.
+          </p>
+          <button 
+            onClick={onGoToLogin}
+            className="px-10 py-4 bg-blue-600 text-white rounded-full text-lg font-bold hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 hover:scale-105 active:scale-95"
+          >
+            Get Started
+          </button>
+        </motion.div>
+      </main>
+
+      <footer className="py-8 text-center border-t border-gray-100">
+        <p className="text-gray-400 text-sm font-medium tracking-wide">
+          Crafted by <span className="text-gray-900">Shri Studio</span>
+        </p>
+      </footer>
+    </div>
+  );
+};
+
+const LoginPage = ({ onLogin, isMaster = false }: { onLogin: (user: User, token: string) => void, isMaster?: boolean }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -40,11 +90,11 @@ const Login = ({ onLogin }: { onLogin: (user: User) => void }) => {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ email, password, isMaster }),
       });
       const data = await res.json();
       if (data.success) {
-        onLogin(data.user);
+        onLogin(data.user, data.token);
       } else {
         setError(data.message);
       }
@@ -56,57 +106,352 @@ const Login = ({ onLogin }: { onLogin: (user: User) => void }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5] p-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] p-4">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-white rounded-2xl shadow-sm p-8 border border-black/5"
+        className="w-full max-w-md bg-white rounded-3xl shadow-xl p-10 border border-gray-100"
       >
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center mb-4">
+        <div className="flex flex-col items-center mb-10">
+          <div className={`w-16 h-16 ${isMaster ? 'bg-purple-600' : 'bg-blue-600'} rounded-2xl flex items-center justify-center mb-4 shadow-lg`}>
             <ShieldCheck className="text-white w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Manpower Portal</h1>
-          <p className="text-gray-500 text-sm mt-1">Enter your login code to continue</p>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+            {isMaster ? 'Master Access' : 'Manpower Portal'}
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">Sign in to your account</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Login Code</label>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Email Address</label>
             <input 
-              type="password" 
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black transition-all"
-              placeholder="••••"
+              type="email" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-5 py-3.5 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-600 transition-all bg-gray-50/50"
+              placeholder="name@company.com"
               required
             />
           </div>
-          {error && <p className="text-red-500 text-xs font-medium">{error}</p>}
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Password</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-5 py-3.5 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-600 transition-all bg-gray-50/50"
+              placeholder="••••••••"
+              required={!(isMaster && email === 'superadmin@example.com')}
+            />
+          </div>
+          {error && (
+            <motion.p 
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="text-red-500 text-xs font-semibold bg-red-50 p-3 rounded-xl border border-red-100"
+            >
+              {error}
+            </motion.p>
+          )}
           <button 
             type="submit"
             disabled={loading}
-            className="w-full bg-black text-white py-3 rounded-xl font-medium hover:bg-black/90 transition-colors disabled:opacity-50"
+            className={`w-full ${isMaster ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} text-white py-4 rounded-2xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-50`}
           >
-            {loading ? 'Verifying...' : 'Sign In'}
+            {loading ? 'Authenticating...' : 'Sign In'}
           </button>
         </form>
-        <div className="mt-8 pt-6 border-top border-gray-100 text-center">
-          <p className="text-xs text-gray-400">Internal Database System v1.0</p>
-        </div>
       </motion.div>
     </div>
   );
 };
 
-const AdminDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
+const SetPasswordPage = ({ email, onComplete }: { email: string, onComplete: (user: User, token: string) => void }) => {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        onComplete(data.user, data.token);
+      } else {
+        setError(data.message);
+      }
+    } catch (err) {
+      setError('Connection failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] p-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md bg-white rounded-3xl shadow-xl p-10 border border-gray-100"
+      >
+        <div className="flex flex-col items-center mb-10">
+          <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+            <ShieldCheck className="text-white w-8 h-8" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Set Your Password</h1>
+          <p className="text-gray-500 text-sm mt-1 text-center">Please set a secure password for your account</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">New Password</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-5 py-3.5 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-green-50 focus:border-green-600 transition-all bg-gray-50/50"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Confirm Password</label>
+            <input 
+              type="password" 
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full px-5 py-3.5 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-green-50 focus:border-green-600 transition-all bg-gray-50/50"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          {error && (
+            <motion.p 
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="text-red-500 text-xs font-semibold bg-red-50 p-3 rounded-xl border border-red-100"
+            >
+              {error}
+            </motion.p>
+          )}
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl font-bold transition-all shadow-lg active:scale-95 disabled:opacity-50"
+          >
+            {loading ? 'Saving...' : 'Set Password & Continue'}
+          </button>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+const SuperAdminDashboard = ({ user, token, onLogout }: { user: User, token: string, onLogout: () => void }) => {
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [showAddCompany, setShowAddCompany] = useState(false);
+  const [showAddAdmin, setShowAddAdmin] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newCompanyEmail, setNewCompanyEmail] = useState('');
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | ''>('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchCompanies = async () => {
+    const res = await fetch('/api/superadmin/companies', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    setCompanies(data);
+  };
+
+  useEffect(() => { fetchCompanies(); }, []);
+
+  const handleAddCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const res = await fetch('/api/superadmin/companies', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ company_name: newCompanyName, email: newCompanyEmail }),
+    });
+    if (res.ok) {
+      setNewCompanyName('');
+      setNewCompanyEmail('');
+      setShowAddCompany(false);
+      fetchCompanies();
+    }
+    setLoading(false);
+  };
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const res = await fetch('/api/superadmin/admins', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ 
+        name: newAdminName, 
+        email: newAdminEmail, 
+        company_id: selectedCompanyId 
+      }),
+    });
+    if (res.ok) {
+      setNewAdminName('');
+      setNewAdminEmail('');
+      setSelectedCompanyId('');
+      setShowAddAdmin(false);
+    }
+    setLoading(false);
+  };
+  
+  return (
+    <div className="min-h-screen bg-[#f8fafc]">
+      <nav className="bg-white border-b border-gray-100 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
+            <ShieldCheck className="text-white w-5 h-5" />
+          </div>
+          <span className="font-bold tracking-tight text-gray-900">Master Console</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-500 font-medium">{user.name}</span>
+          <button onClick={onLogout} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500">
+            <LogOut size={20} />
+          </button>
+        </div>
+      </nav>
+
+      <main className="max-w-5xl mx-auto p-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Companies Section */}
+          <section className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Companies</h2>
+              <button 
+                onClick={() => setShowAddCompany(true)}
+                className="p-2 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors"
+              >
+                <Plus size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              {companies.map(c => (
+                <div key={c.id} className="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-gray-900">{c.name}</h3>
+                    <p className="text-xs text-gray-500">{c.email}</p>
+                  </div>
+                  <Building2 size={16} className="text-gray-300" />
+                </div>
+              ))}
+              {companies.length === 0 && <p className="text-sm text-gray-400 italic">No companies added yet</p>}
+            </div>
+          </section>
+
+          {/* Admins Section */}
+          <section className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Company Admins</h2>
+              <button 
+                onClick={() => setShowAddAdmin(true)}
+                className="p-2 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors"
+              >
+                <UserPlus size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-400 italic">Assign administrators to companies. They will receive credentials via email.</p>
+          </section>
+        </div>
+      </main>
+
+      <AnimatePresence>
+        {showAddCompany && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl">
+              <h3 className="text-xl font-bold mb-6">Add New Company</h3>
+              <form onSubmit={handleAddCompany} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Company Name</label>
+                  <input type="text" value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)} className="w-full px-5 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-purple-50 focus:border-purple-600 transition-all" placeholder="Acme Corp" required />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Official Email</label>
+                  <input type="email" value={newCompanyEmail} onChange={(e) => setNewCompanyEmail(e.target.value)} className="w-full px-5 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-purple-50 focus:border-purple-600 transition-all" placeholder="admin@acme.com" required />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setShowAddCompany(false)} className="flex-1 px-4 py-3 rounded-2xl border border-gray-200 text-sm font-bold hover:bg-gray-50 transition-colors">Cancel</button>
+                  <button type="submit" disabled={loading} className="flex-1 px-4 py-3 rounded-2xl bg-purple-600 text-white text-sm font-bold hover:bg-purple-700 transition-colors">Create</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {showAddAdmin && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl">
+              <h3 className="text-xl font-bold mb-6">Add Company Admin</h3>
+              <form onSubmit={handleAddAdmin} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Admin Name</label>
+                  <input type="text" value={newAdminName} onChange={(e) => setNewAdminName(e.target.value)} className="w-full px-5 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-purple-50 focus:border-purple-600 transition-all" placeholder="John Doe" required />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Admin Email</label>
+                  <input type="email" value={newAdminEmail} onChange={(e) => setNewAdminEmail(e.target.value)} className="w-full px-5 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-purple-50 focus:border-purple-600 transition-all" placeholder="john@acme.com" required />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Assign Company</label>
+                  <select value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(Number(e.target.value))} className="w-full px-5 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-purple-50 focus:border-purple-600 transition-all bg-white" required>
+                    <option value="">Select Company</option>
+                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setShowAddAdmin(false)} className="flex-1 px-4 py-3 rounded-2xl border border-gray-200 text-sm font-bold hover:bg-gray-50 transition-colors">Cancel</button>
+                  <button type="submit" disabled={loading} className="flex-1 px-4 py-3 rounded-2xl bg-purple-600 text-white text-sm font-bold hover:bg-purple-700 transition-colors">Create</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const AdminDashboard = ({ user, token, onLogout }: { user: User, token: string, onLogout: () => void }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [showAddUser, setShowAddUser] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newCode, setNewCode] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const fetchUsers = async () => {
-    const res = await fetch('/api/admin/users');
+    const res = await fetch('/api/admin/users', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
     const data = await res.json();
     setUsers(data);
   };
@@ -115,17 +460,22 @@ const AdminDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     const res = await fetch('/api/admin/users', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName, login_code: newCode }),
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ name: newName, email: newEmail }),
     });
     if (res.ok) {
       setNewName('');
-      setNewCode('');
+      setNewEmail('');
       setShowAddUser(false);
       fetchUsers();
     }
+    setLoading(false);
   };
 
   return (
@@ -178,8 +528,8 @@ const AdminDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 block mb-1">Login Code</span>
-                <code className="bg-gray-50 px-3 py-1 rounded-lg text-sm font-mono border border-gray-100">{u.login_code}</code>
+                <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 block mb-1">Email</span>
+                <code className="bg-gray-50 px-3 py-1 rounded-lg text-sm font-mono border border-gray-100">{u.email}</code>
               </div>
             </motion.div>
           ))}
@@ -215,13 +565,13 @@ const AdminDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Login Code</label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Email Address</label>
                   <input 
-                    type="text" 
-                    value={newCode}
-                    onChange={(e) => setNewCode(e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black font-mono"
-                    placeholder="e.g. 1234"
+                    type="email" 
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black"
+                    placeholder="staff@company.com"
                     required
                   />
                 </div>
@@ -694,7 +1044,7 @@ const SECTORS = [
   "Retail", "Logistics", "Education", "Finance", "Real Estate", "Others"
 ];
 
-const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }) => {
+const StaffDashboard = ({ user, token, onLogout }: { user: User, token: string, onLogout: () => void }) => {
   const [tab, setTab] = useState<'clients' | 'employees' | 'dependants' | 'certificates'>('clients');
   const [clients, setClients] = useState<Client[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -818,9 +1168,9 @@ const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
 
   const fetchData = async () => {
     const [cRes, eRes, dRes] = await Promise.all([
-      fetch('/api/clients'),
-      fetch('/api/employees'),
-      fetch('/api/dependants')
+      fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } }),
+      fetch('/api/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
+      fetch('/api/dependants', { headers: { 'Authorization': `Bearer ${token}` } })
     ]);
     setClients(await cRes.json());
     setEmployees(await eRes.json());
@@ -836,7 +1186,9 @@ const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
       return;
     }
     try {
-      const res = await fetch(`/api/employees/${id}`);
+      const res = await fetch(`/api/employees/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if (res.ok) {
         const data = await res.json();
         if (isCert) setVerifiedEmployee(data);
@@ -953,7 +1305,10 @@ const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
       try {
         const res = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify(payload),
         });
         if (res.ok) {
@@ -978,7 +1333,10 @@ const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
     
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({ ...clientForm, created_by: user.id }),
     });
     if (res.ok) {
@@ -1004,7 +1362,10 @@ const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
 
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({ 
         ...empForm, 
         salary: totalSalary,
@@ -1039,7 +1400,10 @@ const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
 
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({ ...depForm, created_by: user.id }),
     });
     if (res.ok) {
@@ -2478,29 +2842,63 @@ const StaffDashboard = ({ user, onLogout }: { user: User, onLogout: () => void }
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isMaster, setIsMaster] = useState(false);
 
-  const handleLogin = (u: User) => {
+  useEffect(() => {
+    const savedUser = localStorage.getItem('portal_user');
+    const savedToken = localStorage.getItem('portal_token');
+    if (savedUser && savedToken) {
+      setUser(JSON.parse(savedUser));
+      setToken(savedToken);
+    }
+    
+    // Check if we are on /master
+    if (window.location.pathname === '/master') {
+      setIsMaster(true);
+    }
+  }, []);
+
+  const handleLogin = (u: User, t: string) => {
     setUser(u);
+    setToken(t);
     localStorage.setItem('portal_user', JSON.stringify(u));
+    localStorage.setItem('portal_token', t);
   };
 
   const handleLogout = () => {
     setUser(null);
+    setToken(null);
     localStorage.removeItem('portal_user');
+    localStorage.removeItem('portal_token');
+    if (isMaster) {
+      window.location.href = '/master';
+    } else {
+      window.location.href = '/';
+    }
   };
 
-  useEffect(() => {
-    const saved = localStorage.getItem('portal_user');
-    if (saved) setUser(JSON.parse(saved));
-  }, []);
-
   if (!user) {
-    return <Login onLogin={handleLogin} />;
+    if (isMaster) {
+      return <LoginPage onLogin={handleLogin} isMaster={true} />;
+    }
+    if (window.location.pathname === '/login') {
+      return <LoginPage onLogin={handleLogin} />;
+    }
+    return <LandingPage onGoToLogin={() => window.location.href = '/login'} />;
+  }
+
+  if (user.is_first_login) {
+    return <SetPasswordPage email={user.email} onComplete={handleLogin} />;
+  }
+
+  if (user.role === 'superadmin') {
+    return <SuperAdminDashboard user={user} token={token!} onLogout={handleLogout} />;
   }
 
   return user.role === 'admin' ? (
-    <AdminDashboard user={user} onLogout={handleLogout} />
+    <AdminDashboard user={user} token={token!} onLogout={handleLogout} />
   ) : (
-    <StaffDashboard user={user} onLogout={handleLogout} />
+    <StaffDashboard user={user} token={token!} onLogout={handleLogout} />
   );
 }

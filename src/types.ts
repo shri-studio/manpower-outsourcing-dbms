@@ -1,8 +1,17 @@
 export interface User {
   id: number;
   name: string;
-  login_code: string;
-  role: 'admin' | 'staff';
+  email: string;
+  role: 'superadmin' | 'admin' | 'staff';
+  company_id?: number;
+  is_first_login: boolean;
+}
+
+export interface Company {
+  id: number;
+  name: string;
+  email: string;
+  created_at: string;
 }
 
 export interface ClientContact {
