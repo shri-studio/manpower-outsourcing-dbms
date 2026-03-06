@@ -1,0 +1,5 @@
+{
+  "name": "Manpower Outsourcing Database Management",
+  "description": "Internal database for managing staff, clients, and deployed resources.",
+  "requestFramePermissions": []
+}
