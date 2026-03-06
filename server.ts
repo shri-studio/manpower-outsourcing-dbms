@@ -54,39 +54,8 @@ const isAdmin = (req: any, res: any, next: any) => {
   next();
 };
 
-async function setupDb() {
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS companies (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT UNIQUE;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INTEGER REFERENCES companies(id);
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_first_login BOOLEAN DEFAULT TRUE;
-      
-      -- Update existing users if needed (optional, depends on state)
-    `);
-    
-    const superadminCheck = await client.query("SELECT * FROM users WHERE role = 'superadmin'");
-    if (superadminCheck.rowCount === 0) {
-      await client.query("INSERT INTO users (name, email, role, is_first_login) VALUES ($1, $2, $3, $4)", 
-        ["Super Admin", "superadmin@example.com", "superadmin", true]);
-    }
-  } catch (e) {
-    console.error("DB Setup Error:", e);
-  } finally {
-    client.release();
-  }
-}
 
 async function startServer() {
-  await setupDb();
   const app = express();
   const PORT = 3000;
 
@@ -229,9 +198,9 @@ async function startServer() {
       let query = "SELECT id, name, email, role, is_first_login FROM users WHERE role = 'staff'";
       let params = [];
       
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         query += " AND company_id = $1";
-        params.push(req.user.company_id);
+        params.push(req.user!.company_id);
       }
       
       const result = await pool.query(query, params);
@@ -244,7 +213,7 @@ async function startServer() {
   app.post("/api/admin/users", authenticateToken, isAdmin, async (req, res) => {
     const { name, email } = req.body;
     const tempPassword = Math.random().toString(36).slice(-8);
-    const company_id = req.user.role === 'superadmin' ? req.body.company_id : req.user.company_id;
+    const company_id = req.user!.role === 'superadmin' ? req.body.company_id : req.user!.company_id;
 
     try {
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
@@ -289,9 +258,9 @@ async function startServer() {
       `;
       let params = [];
 
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         query += " WHERE c.company_id = $1";
-        params.push(req.user.company_id);
+        params.push(req.user!.company_id);
       }
 
       const clientsResult = await pool.query(query, params);
@@ -313,8 +282,8 @@ async function startServer() {
       company_name, location, sector, sector_other, unique_code, 
       cr_no, contract_type, contract_renewal_date, contacts 
     } = req.body;
-    const company_id = req.user.company_id;
-    const created_by = req.user.id;
+    const company_id = req.user!.company_id;
+    const created_by = req.user!.id;
     
     const client = await pool.connect();
     try {
@@ -365,9 +334,9 @@ async function startServer() {
       await client.query("BEGIN");
       
       // Verify ownership
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         const check = await client.query("SELECT company_id FROM clients WHERE id = $1", [clientId]);
-        if (check.rows[0]?.company_id !== req.user.company_id) {
+        if (check.rows[0]?.company_id !== req.user!.company_id) {
           throw new Error("Access denied");
         }
       }
@@ -405,8 +374,8 @@ async function startServer() {
 
   app.post("/api/clients/bulk", authenticateToken, async (req, res) => {
     const { clients } = req.body;
-    const company_id = req.user.company_id;
-    const created_by = req.user.id;
+    const company_id = req.user!.company_id;
+    const created_by = req.user!.id;
 
     const client = await pool.connect();
     try {
@@ -443,9 +412,9 @@ async function startServer() {
       `;
       let params = [];
 
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         query += " WHERE e.company_id = $1";
-        params.push(req.user.company_id);
+        params.push(req.user!.company_id);
       }
 
       const result = await pool.query(query, params);
@@ -465,8 +434,8 @@ async function startServer() {
       nationality, passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address,
       emergency_contact_name, emergency_contact_phone, emergency_contact_relation
     } = req.body;
-    const company_id = req.user.company_id;
-    const created_by = req.user.id;
+    const company_id = req.user!.company_id;
+    const created_by = req.user!.id;
 
     try {
       const result = await pool.query(`
@@ -510,9 +479,9 @@ async function startServer() {
 
     try {
       // Verify ownership
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         const check = await pool.query("SELECT company_id FROM employees WHERE id = $1", [employeeId]);
-        if (check.rows[0]?.company_id !== req.user.company_id) {
+        if (check.rows[0]?.company_id !== req.user!.company_id) {
           return res.status(403).json({ message: "Access denied" });
         }
       }
@@ -547,8 +516,8 @@ async function startServer() {
 
   app.post("/api/employees/bulk", authenticateToken, async (req, res) => {
     const { employees } = req.body;
-    const company_id = req.user.company_id;
-    const created_by = req.user.id;
+    const company_id = req.user!.company_id;
+    const created_by = req.user!.id;
 
     const client = await pool.connect();
     try {
@@ -585,9 +554,9 @@ async function startServer() {
       `;
       let params: any[] = [req.params.id];
 
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         query += " AND e.company_id = $2";
-        params.push(req.user.company_id);
+        params.push(req.user!.company_id);
       }
 
       const result = await pool.query(query, params);
@@ -612,9 +581,9 @@ async function startServer() {
       `;
       let params = [];
 
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         query += " WHERE d.company_id = $1";
-        params.push(req.user.company_id);
+        params.push(req.user!.company_id);
       }
 
       const result = await pool.query(query, params);
@@ -631,8 +600,8 @@ async function startServer() {
       mobile_no, personal_email, nationality, address, country,
       passport_no, passport_issuing_country, passport_issue_date, passport_expiry_date, permanent_address
     } = req.body;
-    const company_id = req.user.company_id;
-    const created_by = req.user.id;
+    const company_id = req.user!.company_id;
+    const created_by = req.user!.id;
 
     try {
       const result = await pool.query(`
@@ -667,9 +636,9 @@ async function startServer() {
 
     try {
       // Verify ownership
-      if (req.user.role !== 'superadmin') {
+      if (req.user!.role !== 'superadmin') {
         const check = await pool.query("SELECT company_id FROM dependants WHERE id = $1", [dependantId]);
-        if (check.rows[0]?.company_id !== req.user.company_id) {
+        if (check.rows[0]?.company_id !== req.user!.company_id) {
           return res.status(403).json({ message: "Access denied" });
         }
       }
@@ -697,8 +666,8 @@ async function startServer() {
 
   app.post("/api/dependants/bulk", authenticateToken, async (req, res) => {
     const { dependants } = req.body;
-    const company_id = req.user.company_id;
-    const created_by = req.user.id;
+    const company_id = req.user!.company_id;
+    const created_by = req.user!.id;
 
     const client = await pool.connect();
     try {
