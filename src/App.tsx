@@ -29,48 +29,198 @@ import { User, Client, Employee, Dependant, Company } from './types';
 // Components
 const LandingPage = ({ onGoToLogin }: { onGoToLogin: () => void }) => {
   return (
-    <div className="min-h-screen bg-white flex flex-col">
-      <nav className="px-6 py-4 flex justify-between items-center border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <ShieldCheck className="text-white w-5 h-5" />
+    <div className="min-h-screen bg-[#0A0F1E] text-[#94A3B8] font-sans selection:bg-[#3B82F6]/30 selection:text-white">
+      {/* Navbar */}
+      <nav className="fixed top-0 w-full z-50 bg-[#0A0F1E]/80 backdrop-blur-md border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[#3B82F6]/10 rounded-xl flex items-center justify-center border border-[#3B82F6]/20">
+              <ShieldCheck className="text-[#3B82F6] w-6 h-6" />
+            </div>
+            <span className="font-bold text-xl tracking-tight text-white">Manpower Outsourcing DBMS</span>
           </div>
-          <span className="font-bold text-xl tracking-tight text-gray-900">Manpower DBMS</span>
-        </div>
-        <button 
-          onClick={onGoToLogin}
-          className="px-6 py-2 bg-blue-600 text-white rounded-full font-medium hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
-        >
-          Login
-        </button>
-      </nav>
-
-      <main className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-3xl"
-        >
-          <h1 className="text-5xl md:text-7xl font-extrabold text-gray-900 mb-6 tracking-tight">
-            Manpower Outsource <span className="text-blue-600">DBMS</span>
-          </h1>
-          <p className="text-xl text-gray-500 mb-10 max-w-2xl mx-auto">
-            Streamline your workforce management with our professional database system. 
-            Secure, efficient, and built for scale.
-          </p>
           <button 
             onClick={onGoToLogin}
-            className="px-10 py-4 bg-blue-600 text-white rounded-full text-lg font-bold hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 hover:scale-105 active:scale-95"
+            className="px-8 py-2.5 border border-[#3B82F6] text-[#3B82F6] rounded-full font-semibold hover:bg-[#3B82F6] hover:text-white transition-all duration-300"
           >
-            Get Started
+            Login
           </button>
-        </motion.div>
-      </main>
+        </div>
+      </nav>
 
-      <footer className="py-8 text-center border-t border-gray-100">
-        <p className="text-gray-400 text-sm font-medium tracking-wide">
-          Crafted by <span className="text-gray-900">Shri Studio</span>
-        </p>
+      {/* Hero Section */}
+      <section className="relative pt-40 pb-32 overflow-hidden">
+        {/* Subtle Background Pattern */}
+        <div className="absolute inset-0 z-0 opacity-20">
+          <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(#3B82F6 0.5px, transparent 0.5px)', backgroundSize: '40px 40px' }}></div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-6 relative z-10 flex flex-col items-center text-center">
+          <motion.span 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-[#3B82F6] text-xs font-bold tracking-[0.2em] uppercase mb-6"
+          >
+            Workforce Management Platform
+          </motion.span>
+          
+          <motion.h1 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-5xl md:text-7xl font-bold text-white mb-8 leading-[1.1]"
+          >
+            Manage Your Workforce<br />With Confidence
+          </motion.h1>
+          
+          <motion.p 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="text-lg md:text-xl text-[#94A3B8] mb-12 max-w-2xl leading-relaxed"
+          >
+            The all-in-one platform for outsourcing companies to manage 
+            employees, clients, contracts and insurance — all in one place.
+          </motion.p>
+          
+          <motion.button 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            onClick={onGoToLogin}
+            className="group relative px-10 py-4 bg-[#3B82F6] text-white rounded-full text-lg font-bold hover:scale-105 transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)]"
+          >
+            Get Started <span className="inline-block transition-transform group-hover:translate-x-1 ml-1">→</span>
+          </motion.button>
+        </div>
+      </section>
+
+      {/* Features Section */}
+      <section className="py-32 bg-[#0A0F1E]">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-20">
+            <span className="text-[#3B82F6] text-xs font-bold tracking-[0.2em] uppercase mb-4 block">What We Offer</span>
+            <h2 className="text-3xl md:text-4xl font-bold text-white">Everything you need, nothing you don't</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              {
+                icon: <Users className="w-8 h-8 text-[#3B82F6]" />,
+                title: "Employee Management",
+                desc: "Track personal details, documents, salary, insurance and dependants in one place."
+              },
+              {
+                icon: <Building2 className="w-8 h-8 text-[#3B82F6]" />,
+                title: "Client Management",
+                desc: "Manage client companies, contacts, contracts and assigned workforce effortlessly."
+              },
+              {
+                icon: <ShieldCheck className="w-8 h-8 text-[#3B82F6]" />,
+                title: "Insurance & Documents",
+                desc: "Keep insurance records, expiry dates and important documents organized and accessible."
+              }
+            ].map((feature, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="p-10 bg-[#111827] rounded-3xl border border-white/5 hover:border-[#3B82F6]/50 transition-all duration-500 group"
+              >
+                <div className="mb-8 p-4 bg-[#3B82F6]/10 rounded-2xl w-fit group-hover:scale-110 transition-transform duration-500">
+                  {feature.icon}
+                </div>
+                <h3 className="text-xl font-bold text-white mb-4">{feature.title}</h3>
+                <p className="text-[#94A3B8] leading-relaxed">{feature.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section className="py-32 bg-[#0A0F1E]">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-20">
+            <span className="text-[#3B82F6] text-xs font-bold tracking-[0.2em] uppercase mb-4 block">How It Works</span>
+            <h2 className="text-3xl md:text-4xl font-bold text-white">Up and running in minutes</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+            {[
+              {
+                num: "01",
+                title: "Admin Setup",
+                desc: "Admin account created by platform"
+              },
+              {
+                num: "02",
+                title: "Add Your Data",
+                desc: "Import clients and employees"
+              },
+              {
+                num: "03",
+                title: "Manage Everything",
+                desc: "Full control from one dashboard"
+              }
+            ].map((step, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="flex flex-col items-center text-center"
+              >
+                <span className="text-5xl font-bold text-[#3B82F6]/20 mb-6 font-mono">{step.num}</span>
+                <h3 className="text-xl font-bold text-white mb-4">{step.title}</h3>
+                <p className="text-[#94A3B8] leading-relaxed">{step.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Banner */}
+      <section className="py-24 bg-[#0F172A]">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+          >
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">Ready to streamline your workforce?</h2>
+            <p className="text-xl text-[#94A3B8] mb-12">Join companies already managing their manpower smarter.</p>
+            <button 
+              onClick={onGoToLogin}
+              className="group relative px-10 py-4 bg-[#3B82F6] text-white rounded-full text-lg font-bold hover:scale-105 transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)]"
+            >
+              Get Started <span className="inline-block transition-transform group-hover:translate-x-1 ml-1">→</span>
+            </button>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-12 border-t border-white/5 bg-[#0A0F1E]">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-8 mb-8">
+            <span className="font-bold text-white">Manpower Outsourcing DBMS</span>
+            <button 
+              onClick={onGoToLogin}
+              className="text-[#94A3B8] hover:text-[#3B82F6] transition-colors font-medium"
+            >
+              Login
+            </button>
+          </div>
+          <div className="text-center pt-8 border-t border-white/5">
+            <p className="text-sm text-[#94A3B8]/50 uppercase tracking-widest">
+              crafted by <span className="text-[#94A3B8]">shri Studio</span>
+            </p>
+          </div>
+        </div>
       </footer>
     </div>
   );
