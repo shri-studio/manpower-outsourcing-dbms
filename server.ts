@@ -216,9 +216,10 @@ async function startServer() {
   app.get("/api/superadmin/companies", authenticateToken, isSuperAdmin, async (req, res) => {
     try {
       const result = await pool.query("SELECT * FROM companies ORDER BY name ASC");
-      res.json(result.rows);
+      res.json(Array.isArray(result.rows) ? result.rows : []);
     } catch (e: any) {
-      res.status(500).json({ success: false, message: e.message });
+      console.error("Fetch companies error:", e);
+      res.json([]); // Always return an array as requested
     }
   });
 

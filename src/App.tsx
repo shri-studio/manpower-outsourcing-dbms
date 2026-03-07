@@ -644,16 +644,29 @@ const SuperAdminDashboard = ({ user, token, onLogout }: { user: User, token: str
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | ''>('');
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
 
   const fetchCompanies = async () => {
-    const res = await fetch('/api/superadmin/companies', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setCompanies(data);
+    setFetching(true);
+    try {
+      const res = await fetch('/api/superadmin/companies', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setCompanies(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch companies:", err);
+      setCompanies([]);
+    } finally {
+      setFetching(false);
+    }
   };
 
-  useEffect(() => { fetchCompanies(); }, []);
+  useEffect(() => { 
+    if (token) {
+      fetchCompanies(); 
+    }
+  }, [token]);
 
   const handleAddCompany = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -730,16 +743,23 @@ const SuperAdminDashboard = ({ user, token, onLogout }: { user: User, token: str
               </button>
             </div>
             <div className="space-y-4">
-              {companies.map(c => (
-                <div key={c.id} className="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
-                  <div>
-                    <h3 className="font-bold text-gray-900">{c.name}</h3>
-                    <p className="text-xs text-gray-500">{c.email}</p>
-                  </div>
-                  <Building2 size={16} className="text-gray-300" />
+              {fetching ? (
+                <div className="text-center py-12">
+                  <p className="text-gray-400 animate-pulse">Loading companies...</p>
                 </div>
-              ))}
-              {companies.length === 0 && <p className="text-sm text-gray-400 italic">No companies added yet</p>}
+              ) : Array.isArray(companies) && companies.length > 0 ? (
+                companies.map(c => (
+                  <div key={c.id} className="p-4 bg-gray-50 rounded-2xl flex justify-between items-center">
+                    <div>
+                      <h3 className="font-bold text-gray-900">{c.name}</h3>
+                      <p className="text-xs text-gray-500">{c.email}</p>
+                    </div>
+                    <Building2 size={16} className="text-gray-300" />
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-400 italic">No companies added yet</p>
+              )}
             </div>
           </section>
 
@@ -799,7 +819,7 @@ const SuperAdminDashboard = ({ user, token, onLogout }: { user: User, token: str
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 ml-1">Assign Company</label>
                   <select value={selectedCompanyId} onChange={(e) => setSelectedCompanyId(Number(e.target.value))} className="w-full px-5 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-purple-50 focus:border-purple-600 transition-all bg-white" required>
                     <option value="">Select Company</option>
-                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {Array.isArray(companies) && companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div className="flex gap-3 pt-4">
@@ -823,14 +843,26 @@ const AdminDashboard = ({ user, token, onLogout }: { user: User, token: string, 
   const [loading, setLoading] = useState(false);
 
   const fetchUsers = async () => {
-    const res = await fetch('/api/admin/users', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setUsers(data);
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/users', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => { 
+    if (token) {
+      fetchUsers(); 
+    }
+  }, [token]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1541,17 +1573,33 @@ const StaffDashboard = ({ user, token, onLogout }: { user: User, token: string, 
   };
 
   const fetchData = async () => {
-    const [cRes, eRes, dRes] = await Promise.all([
-      fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } }),
-      fetch('/api/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
-      fetch('/api/dependants', { headers: { 'Authorization': `Bearer ${token}` } })
-    ]);
-    setClients(await cRes.json());
-    setEmployees(await eRes.json());
-    setDependants(await dRes.json());
+    try {
+      const [cRes, eRes, dRes] = await Promise.all([
+        fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/employees', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/dependants', { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
+      
+      const cData = await cRes.json();
+      const eData = await eRes.json();
+      const dData = await dRes.json();
+      
+      setClients(Array.isArray(cData) ? cData : []);
+      setEmployees(Array.isArray(eData) ? eData : []);
+      setDependants(Array.isArray(dData) ? dData : []);
+    } catch (err) {
+      console.error("Failed to fetch dashboard data:", err);
+      setClients([]);
+      setEmployees([]);
+      setDependants([]);
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    if (token) {
+      fetchData(); 
+    }
+  }, [token]);
 
   const verifyEmployee = async (id: string, isCert: boolean = false) => {
     if (!id) {
