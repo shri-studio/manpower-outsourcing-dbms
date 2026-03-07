@@ -78,7 +78,7 @@ async function startServer() {
       }
 
       // First login superadmin case
-      if (user.role === 'superadmin' && user.password_hash === null) {
+      if (isMaster && user.role === 'superadmin' && user.password_hash === null && user.is_first_login) {
         const token = jwt.sign(
           { id: user.id, email: user.email, role: user.role, company_id: user.company_id },
           process.env.JWT_SECRET as string,

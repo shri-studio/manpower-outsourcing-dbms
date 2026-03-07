@@ -292,7 +292,7 @@ const LoginPage = ({ onLogin, isMaster = false }: { onLogin: (user: User, token:
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-5 py-3.5 rounded-2xl border border-gray-200 focus:outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-600 transition-all bg-gray-50/50"
               placeholder="••••••••"
-              required={!(isMaster && email === 'superadmin@example.com')}
+              required={!isMaster}
             />
           </div>
           {error && (
