@@ -136,6 +136,82 @@ async function startServer() {
     }
   });
 
+  app.post("/api/forgot-password", async (req, res) => {
+    const { email } = req.body;
+    try {
+      const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+      const user = result.rows[0];
+
+      if (user) {
+        const resetToken = jwt.sign(
+          { email: user.email, type: 'reset-password' },
+          process.env.JWT_SECRET as string,
+          { expiresIn: '1h' }
+        );
+
+        const appUrl = process.env.APP_URL || `http://localhost:3000`;
+        const resetLink = `${appUrl}/reset-password?token=${resetToken}`;
+
+        await resend.emails.send({
+          from: 'Manpower DBMS <onboarding@resend.dev>',
+          to: user.email,
+          subject: 'Reset your Manpower DBMS password',
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background-color: #0A0F1E; color: #FFFFFF; padding: 40px; border-radius: 16px;">
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #3B82F6; margin: 0;">Manpower DBMS</h1>
+                <p style="color: #94A3B8; margin-top: 10px;">Workforce Management Platform</p>
+              </div>
+              <div style="background-color: #111827; padding: 30px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                <h2 style="margin-top: 0;">Reset Your Password</h2>
+                <p style="color: #94A3B8; line-height: 1.6;">We received a request to reset your password. Click the button below to choose a new one.</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${resetLink}" style="background-color: #3B82F6; color: #FFFFFF; padding: 14px 28px; border-radius: 9999px; text-decoration: none; font-weight: bold; display: inline-block;">Reset Password</a>
+                </div>
+                <p style="color: #94A3B8; font-size: 14px;">This link expires in 1 hour.</p>
+                <p style="color: #94A3B8; font-size: 14px; margin-bottom: 0;">If you didn't request this, you can safely ignore this email.</p>
+              </div>
+              <div style="text-align: center; margin-top: 30px; color: #94A3B8; font-size: 12px;">
+                &copy; ${new Date().getFullYear()} Manpower Outsourcing DBMS
+              </div>
+            </div>
+          `
+        });
+      }
+
+      // Always return success for security
+      res.json({ success: true, message: "Check your email for reset instructions" });
+    } catch (e: any) {
+      console.error("Forgot password error:", e);
+      res.status(500).json({ success: false, message: "Failed to process request" });
+    }
+  });
+
+  app.post("/api/reset-password", async (req, res) => {
+    const { token, password } = req.body;
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+      
+      if (decoded.type !== 'reset-password') {
+        return res.status(400).json({ success: false, message: "Invalid token type" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const result = await pool.query(
+        "UPDATE users SET password_hash = $1, is_first_login = false WHERE email = $2 RETURNING *",
+        [hashedPassword, decoded.email]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      res.json({ success: true, message: "Password updated successfully" });
+    } catch (e: any) {
+      res.status(400).json({ success: false, message: "Invalid or expired token" });
+    }
+  });
+
   // Superadmin Routes
   app.get("/api/superadmin/companies", authenticateToken, isSuperAdmin, async (req, res) => {
     try {
